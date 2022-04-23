@@ -1,0 +1,420 @@
+---
+title: "Final Project"
+author: "Yuhao, Adam"
+date: "4/6/2022"
+output:
+  md_document:
+    variant: markdown_github
+bibliography: references.bib 
+---
+
+
+# Intro/background/research question:
+
+How does seller rating impact how interconnected a seller is in the bitcoin market? 
+How do the ratings affect the transactions in a who-trust-who bitcoin market?
+
+Since cryptocurrencies like bitcoin are anonymous, it is important that there is trust when a transaction is made. Today bitcoin transactions can be completed through outside sources such as Coinbase or Robinhood but when it first started out people would earn bitcoin by mining it which is where they would remotely lease out their computing power in exchange for some of this currency. People could then sell coins in exchange for US dollars on online exchange sites like Bitcoin-Alpha which is where our data came from. Once the transaction goes through Bitcoin-Alpha allows buyers to rate the seller from a scale of -10 to 10, with -10 being the least satisfactory or most untrustworthy, 10 being the most satisfactory/trustworthy, and 0 being neutral. This system works similar to Uber, Esty’s, or Ebay’s rating systems, just with a different value range. Our data has 24,296 transactions involving 3,783 people. This network is directed since only the buyer gives the seller a rating, not like Uber where both parties give each other a rating. (@kumar2016edge and @kumar2018rev2)
+
+The main questions we want to answer is how does this seller rating impact how interconnected the seller is in the bitcoin market. How correlated is this rating to how  many transactions a seller makes and who the seller sells to in a who-trust-who bitcoin market. If this has similar trends to other peer-to-peer markets, the rating would be extremely important. For example when buying from an unknown seller on Ebay or Amazon, the websites provide information like how many sales the seller has as well as an average rating for all of their sales. Typically one would not buy something from someone with a low rating particularly if returns are not possible. Something to consider here is Bitcoin is not a physical object, it is entirely digital, meaning then every one is theoretically identical. This means that rating may be less important. However, crypto-currencies are entirely unregulated allowing for more illegal activity to take place. The entire purpose of them is to have an untraceable currency that isn’t regulated or attached to any country. This means everyone is anonymous. This would make it more risky to make a transaction with an unknown seller which could result in rating having an increased importance.(@Barabasi_linked_2002)
+
+We are going to analyze this data to see if there are any trends. Crypto-currency is still very new so it will be interesting to see if there are any similarities between its markets and other online marketplaces in which we are more familiar with them. This is just the bitcoin market for one bitcoin exchange but it can still give us a lot of insight into the network and how different actors behave. 
+
+
+
+# Methodology:
+
+We used the igraph package(@igraph) in R studio to complete our analysis and generate our visualizations with the help of RColorBrewer package for color pallets that were accessible. We did not have to clean our data but we did have to make sure it was not being read with row or column titles. We started analyzing our data by converting it to a network object so we could plot our network and generate summary statistics. After getting a general picture of this network, we explore further into how attributes like number of transactions and average ratings affect the structure of the network and further understanding of trust networks by plotting density/frequency distribution, fitting into power-law model and linear regression model in analyzing hypothesized variables; In the end, we also predicted how the trust network will be by applying simulation of social selection principles.(@luke_UGNAR_2015)
+
+
+# Code Snippets
+
+## prepare the packages
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Store string containing all required packages
+my_packages <- c('igraph', 'RColorBrewer', 'ggplot2')
+
+```
+
+Figure out which of these packages is already installed
+``` {r}
+# Store all installed packages
+ya_installed <- library()$results[,1]
+
+# Check whether required packages are already installed and grab only those that still need installation
+need_install<-my_packages[!(my_packages %in% ya_installed)]
+
+#install required packages
+lapply(need_install, install.packages, character.only = TRUE)
+
+```
+
+Now, load only unloaded packages
+``` {r}
+# Store all installed packages
+ya_loaded <- (.packages())
+
+# Check whether required packages are already installed and grab only those that still need installation
+need_load<-my_packages[!(my_packages %in% ya_loaded)]
+
+# Load required packages
+lapply(need_load, require, character.only = TRUE)
+```
+
+
+
+## Load the csv file
+```{r}
+bitcoin_df<- read.csv("soc-sign-bitcoinalpha.csv", header = FALSE)
+View(bitcoin_df)
+```
+
+
+## Generating network object of trust network in bitcoin market
+We generate the graph object from the dataframe which is already in the edgelist form. And since the rating has directions, therefore our graph is a directed graph. After generating the graph, from the summary, we know that there are 3783 and 24186 directed edges in total.
+```{r}
+# Create a network graph object
+bitcoin.g <- graph_from_data_frame(bitcoin_df[,1:2], directed = TRUE)
+# use summary to check it out
+summary(bitcoin.g)
+```
+
+
+## Five number summary
+Firstly,we can use the "five-number summary" to have a first look into the 
+```{r}
+#Five number summary
+##1. Size
+gorder(bitcoin.g)
+##2. Density
+edge_density(bitcoin.g)
+##3. components
+components(bitcoin.g)
+##4. Diameters
+diameter(bitcoin.g)
+##5. Clusttering coefficient
+transitivity(bitcoin.g)
+```
+
+
+
+## Rating summary
+We also want to have a general picture of the ratings in this who-trust-who network. We can see that the range of the ratings are from -10 to 10. The Median is 1 and the Mean is 1.464.
+```{r}
+rating <- bitcoin_df[,3]
+summary(rating)
+```
+
+
+## average rating of each nodes 
+Then, we want to know how credible each actors, or more specifically the sellers of bitcoin, in the market? In answering this question, we first want to calculate what is the averaging rating of each seller.  By using the for loop, we calculate the average rating of each nodes based on their index and and store into a new vector score_pos. Since we found that the largest index in our dataset is 7604, we subset the vector. For the indices with rating NA, we reassign the value 0 since they are receiving any ratings from others--in other words, they didn't sell any bitcoins.
+```{r}
+score_pos <-rep(NA, 3783)
+# calculate the average ratings and store into the created vector
+for(i in 1:length(bitcoin_df[,2])){
+   score=0
+   score= score+ sum(rating[which(bitcoin_df[,2]==i)])/length(rating[which(bitcoin_df[,2]==i)])
+   score_pos[i] = score
+}
+
+
+# View the ratings of each nodes
+# subsetting the rate list to the index upper limit
+score_pos_new <- score_pos[1:7604]
+score_pos_new[is.na(score_pos_new)]<- 0
+
+```
+
+### assign averaging rating attributes to nodes
+```{r}
+# nodes attributes rating
+for(i in 1: length(V(bitcoin.g)$name)){
+  V(bitcoin.g)$rate[i] <- score_pos_new[strtoi(V(bitcoin.g)$name[i])]
+}
+```
+
+
+### plot of rating and density distribution of rating
+```{r}
+par(mfrow=c(1,2))
+plot(V(bitcoin.g)$name, V(bitcoin.g)$rate, xlab = "actors' index", ylab = "Average Rating", main = "Average Rating Distribution")
+plot(density(V(bitcoin.g)$rate), main = "Density Distribution of Average Rating", xlab = "Average Rating")
+
+```
+
+## number of transactions for each node
+Also, we want to know the number of transactions each nodes have so that we can have more exploration into the trust network of bitcoin. Similar to the procedure of previous calculation of average rating, we first generate an empty vectors and then adding the number of transactions which is the length of the ratings they have. Importantly, we don't wanna miss the people who don't sell but buy the bitcoins from others(still involving transactions) so we also include the add-up to calculate the exclusive buyers. After we obtain the vector of number of transactions and assing this to the new node attribute "num_trans", we plot the data to show the distribution of the transactions among actors in this network. Interestingly, we found that most transactions are concentrated on the margin of users' index range--especially on the lower limit of the indices (the first a few actors appeared in the network). 
+```{r}
+num_trans <- rep(NA, 3783)
+for(i in 1:length(bitcoin_df[,2])){
+  num_trans[i] <- length(rating[which(bitcoin_df[,2]==i)])
+}
+add_up <-  bitcoin_df[,1][which(! bitcoin_df[,1] %in% bitcoin_df[,2])]
+for(i in 1:42){
+  num_trans[add_up[i]] <-  length(bitcoin_df[,1][which(bitcoin_df[,1]==add_up[i])])
+}
+#check maximum of user's index
+max(bitcoin_df[, 2])
+num_trans_new<- num_trans[1:7604]
+
+# Adding num_trans attribute to each node
+for(i in 1: length(V(bitcoin.g)$name)){
+  V(bitcoin.g)$num_trans[i] <- num_trans_new[strtoi(V(bitcoin.g)$name[i])]
+}
+# scatter plot of number of transactions 
+plot(V(bitcoin.g)$name, V(bitcoin.g)$num_trans, xlab = "actors' index", ylab = "Number", main = "Number of Transactions")
+```
+
+
+## Degree Distributions
+At this point, we have come up with a further question: Does the transactions of bitcoins follows a preferential attachment network? Or in other words, Does most of the bitcoins come from only a few sources? In answering this question, we construct a table of total sellers' count and sorted it into the descending order.
+``` {r}
+# structure data
+seller.count <- table(bitcoin_df[,2])
+seller.orderc <- sort(seller.count, decreasing = TRUE)
+str(seller.orderc)
+```
+
+### Distribution of transactions
+Here we plot the frequency distribution of sellers we can see that most of the transactions come from only a few sellers and others only share a small amount of sellings. 
+``` {r}
+# make barplot
+par(mar=c(8,8,6,6)) # Increase margin size
+barplot(seller.orderc, las=2, cex.names = 0.5, ylim = c(0, 500) ,xlab ="sellers' index" ,ylab ="Frequency" ,  main = "Sellers' Occurrence")
+```
+
+
+### Fitting degree distribution of transactions
+By using the fit_power_law function, we note that our data fit the null model of power law distribution since the p-value is 0.23>0.05.
+``` {r}
+# fitting a power-law distribution function to the number of transactions in declining order
+bit_trans_fit <- fit_power_law(seller.orderc, 10)
+# get the exponent of the distribution
+bit_trans_fit$alpha
+# get the p-calue of the KS test
+bit_trans_fit$KS.p
+```
+
+
+### distribution of ratings in the network
+Furthermore, we want to ask if the trustness ratings also follow the power-law distribution just like the preferential attachment we test in transactions of bitcoins above.
+```{r}
+# constuct a table of rating count
+rating.count <- table(V(bitcoin.g)$rate)
+# sorting the table into descending order
+rating.orderc <- sort(rating.count, decreasing = TRUE)
+# display the structure
+str(rating.orderc)
+
+```
+
+Here is the barplot of the descending frequency table of rating
+``` {r}
+# make barplot of the sorted table of rating
+par(mar=c(8,8,6,6)) # Increase margin size
+barplot(rating.orderc, las=2, cex.names = 0.5, xlab ="Rating" ,ylab ="Frequency" ,  main = "Distribution of Average Rating")
+```
+
+
+### Fitting degree distribution of rating
+We assume the rating is also fitted to the power law distribution. So we did the same fitting as we did to the number of transactions. Not surprisingly, the insignificant p-value(0.84>0.05) suggests that the null model of power law can't be rejected.
+``` {r}
+# fitting a power-law distribution function to the number of transactions in declining order
+bit_rating_fit <- fit_power_law(rating.orderc, 10)
+# get the exponent of the distribution
+bit_rating_fit$alpha
+# get the p-calue of the KS test
+bit_rating_fit$KS.p
+```
+
+### The 80-20 rule
+Here we also want to test the famous 80-20 rules. In our case, the context will be 80% of transactions come from 20% of users in the network. And we found that it doesn't really fit to our bitcoin network which takes about 38% of sellers to reach the 80% of the transactions. 
+```{r}
+ntrans <- dim(bitcoin_df)[1]
+nsellers <-length(V(bitcoin.g))
+sum <- 0
+i <- 0
+p80 <- .8*ntrans 
+while(sum < p80){
+    i<-i+1
+    sum <- sum + num_trans_new[i]
+}
+# how many users to get 80% tweets
+i
+# sum of tweets
+sum
+
+p80sellers <- 100*i/nsellers
+# it takes almost 50% users
+p80sellers
+```
+
+
+
+## statistical analysis
+## How number of transactions affect the network properties
+Here we want to investigate the relationship between some graph properties and the number of transactions. We first fit the linear regression model to the three assumed relationships.
+```{r}
+#Regression analysis of number of transactions and betweenness centrality 
+par(mfrow=c(3,1))
+scatter.smooth(x=V(bitcoin.g)$num_trans, y=betweenness(bitcoin.g), main= "trans-btw")
+scatter.smooth(x=V(bitcoin.g)$num_trans, y=evcent(bitcoin.g, directed = TRUE)$vector)
+scatter.smooth(x= V(bitcoin.g)$num_trans, y= degree(bitcoin.g))
+```
+
+And we came up with specific stats of these regression analysis.  And we found that number of transactions is strongly correlated to the nodes' centrality scores of betweenness, eigenvector, and degree.
+```{r}
+#Summary of regression analysis
+
+summary(lm(betweenness(bitcoin.g) ~ V(bitcoin.g)$num_trans))
+
+summary(lm(evcent(bitcoin.g, directed = TRUE)$vector ~ V(bitcoin.g)$num_trans))
+
+summary(lm(degree(bitcoin.g) ~ V(bitcoin.g)$num_trans))
+
+```
+
+
+
+## how rating affect the num of transactions
+We then want to investigate into another hypothesis: Does the average rating of each node received affects the number of transactions they have or are these two measurement correlated with each other? We test it by doing a regression analysis. The summary statistics tells that we have statistically significant positive correlations between the average rating and number of transactions but the low R-squared(0.001) shows model fit of the dependent variable is really bad that almost all of variability in number of transactions are not explained--which is also reflected in the scatter plot we generated.
+```{r}
+# scatter plot between number of transactions and average rate of each nodes 
+scatter.smooth(x=V(bitcoin.g)$rate, y=V(bitcoin.g)$num_trans)
+summary(lm(V(bitcoin.g)$num_trans ~V(bitcoin.g)$rate))
+```
+
+
+
+## cut rating attributes into categories for further use
+In order to represent the differences in rating visually, we decide to cut the ratings into five categorical values from 1 to 5 in representing the level of ratings. And we also store them into new categorical attributes.
+```{r}
+# categorical attributes
+score_cato<- cut(V(bitcoin.g)$rate, breaks=5, labels = FALSE)
+V(bitcoin.g)$rating_cat <- score_cato
+table(V(bitcoin.g)$rating_cat)
+```
+
+
+## Visualization of network object
+Visualization of our bitcoin trust network. We use two different color represent our signed edges (+) or (-). For nodes' color, we use the categories of ratings we assigned before. And for the nodes' size, we use the log of the rating category levels.
+```{r}
+# Assign new attributes to edges (sign, color)
+E(bitcoin.g)$width <- bitcoin_df[,3]
+E(bitcoin.g)[E(bitcoin.g)$width>0]$sign <- "+"
+E(bitcoin.g)[E(bitcoin.g)$width<0]$sign <- "-"
+# change the negative width to the positive using absolute values
+E(bitcoin.g)[E(bitcoin.g)$width<0]$width <- abs(E(bitcoin.g)[E(bitcoin.g)$width<0]$width)
+# assign the edge color based on the sign attribute
+E(bitcoin.g)[E(bitcoin.g)$sign=="+"]$color <- rgb(186,228,188,
+maxColorValue=255)
+E(bitcoin.g)[E(bitcoin.g)$sign=="-"]$color <- rgb(8,104,172,
+maxColorValue=255)
+
+#assign the colors to each rating categories by using color palette
+my_pal <- brewer.pal(5, "Purples")
+V(bitcoin.g)$color <- my_pal[V(bitcoin.g)$rating_cat]
+
+#Download the visualization with name bitcoin_test.png, width=5000, height=5000
+png(file="bitcoin_test.png", width=5000, height=5000)
+# plot the networks
+plot(bitcoin.g,
+     # vertex size set to be the log of each nodes' rating category value from 1-5
+     vertex.size = log(V(bitcoin.g)$rating_cat)+1,
+     vertex.label.cex = 1,
+     edge.curved  = 0.2,
+     
+     )
+#close the current plot
+dev.off()
+```
+
+
+## Simulation 
+In this section, we want to look further to see possibly the bitcoin trust network will evlove based on social selection. We assume that new bitcoin transactions will be made in the future time steps based on the absolute similarity/difference in trustfulness between the the target nodes and non-neighbor nodes. The update function below follow this mechanism. In each time step, the selected node will made 5 transactions with new buyers. Also, we assume that the selected nodes will be in the range of who have positive average rating and the higher the rating is , the more likely they will be selected in the simulation.
+
+### upaate function that create new transactions
+```{r}
+# Sel_update will add a new edge. Both will be done with weighted dis/similarity.
+Sel_update <- function(g,vtx){
+  V_adj <- neighbors(g,vtx)
+  nodes <- 1:vcount(g)
+  V_nonadj <- nodes[-c(vtx,V_adj)]
+  RTdiff <- (V(g)[V_nonadj]$rate - V(g)[vtx]$rate)/10
+  Sel_V <- sample(V_nonadj,5,prob=abs(1-RTdiff))
+  g[vtx,Sel_V] <- TRUE
+  g
+  }
+```
+
+### update on random nodes
+``` {r}
+# Sel_sim will perform sel_update for a specified number of times on random nodes.
+Sel_sim <- function(g,upd){
+  g_lst <- lapply(1:(upd+1), function(i) i)
+  g_lst[[1]] <- g
+  for (i in 1:upd) {
+    gnew <- g_lst[[i]]
+    node <- sample(strtoi(V(g)[V(g)$rate>0]$name),1, prob = V(g)[V(g)$rate>0]$rate/10)
+    gupd <- Sel_update(gnew,node)
+    g_lst[[i+1]] <- gupd
+    }
+  g_lst
+  }
+```
+
+
+### Run the simulation 
+We decide to run the simulation 200 times. From the summary of three selected time steps, we can see that the number of edges are increasing overtime.
+```{r}
+#set seed
+set.seed(5)
+# simulation process for 200-time update
+g_lst <- Sel_sim(bitcoin.g,200)
+length(g_lst)
+summary(g_lst[[1]])
+summary(g_lst[[150]])
+summary(g_lst[[201]])
+```
+
+
+### comparing the properties of evolving network
+We see that the graph density and neighbors of selected nodes is increasing but the modularity is decreasing.
+``` {r}
+# Comparing the graph properties before and after the simulation
+graph.density(g_lst[[1]])
+graph.density(g_lst[[201]])
+
+neighbors(g_lst[[1]],1412)
+neighbors(g_lst[[201]],1412)
+
+modularity(g_lst[[1]],V(bitcoin.g)$rating_cat)
+modularity(g_lst[[201]],V(bitcoin.g)$rating_cat)
+```
+
+### plot the simulation steps
+We can see that surprisingly the social selection here makes the modularity decrease overtime. One possible explanation to this is because the people with higher average rating is not the people with the higher centrality/have the most transactions. So in choosing to trade with people have higher rating will "de-modularize" the network.
+``` {r}
+# Track how they change over time
+sim_stat <- unlist(lapply(g_lst, function(u)
+modularity(u,V(u)$rating_cat)))
+
+#plot results
+op <- par(mfrow=(c(1,2)))
+plot(density(sim_stat),main="",xlab="Modularity")
+plot(0:200,sim_stat,type="l", xlab="Simulation Step",ylab="Modularity")
+par(op)
+```
+
+
+# Discussion and Conclusion
+
+We found that the difference between zero and the average rating for each seller is statistically significantly different from zero. This likely means that seller rating does matter, the real question is to what extent. Upon further analysis we found that rating was definitely less important than we would have thought. Typically the best selling products on Amazon have the highest rating but in our bitcoin network this was not the case. We believe that this happened because as the seller completed more transactions, the variance of the rating increased. Comparing the scatter plot of average rating and number of transactions,  we found that the sellers with the most sales have a high variability in single rating which makes the ratings fairly lower while the sellers with fewer sales had ratings more concentrated around a few numbers–whether extremely high or low. At the end of the day this happens because rating a seller is subjective, different people have different standards for what services they expect when they make a purchase. They also had different interactions with the seller and different prior experiences so two different people may not have equal trust in the same seller. And another interpretation could be there are irresponsible raters in the network who don't reflect the truth behind the quality of sellers' sources.  As a result, as a seller completes more transactions their average rating may not increase since some people may give them very bad ratings which offset the above average ratings they receive. We also have to remember that the scale for ratings is from -10:+10. This means that on the 5 point scale that is typically used for rating the average rating of +1.464 in our network would be just below a 3. This is a very low rating for a product that cannot possibly differ for each one made but if we think of this as a service rating it starts to make more sense. For a service like uber for example a driver may get a lower rating for something out of their control like traffic. That could be possible for this as well. Anything that a seller does when communicating with the buyer can impact how they are trusted even if the buyer is satisfied with the bitcoin once they receive it. If a seller is trying to move a larger quantity of product they will likely spend less time on each sale or price their product lower which decreases their trustworthiness. 
+
+We think that the amount of bitcoins a seller has sold impacts the number of sales they make more than their rating. However, it would be interesting to see how rating impacts sellers with the same number of bitcoins to sell. If we had the time of sale we could calculate this just by looking at the first sale each seller made but this could still produce inaccurate results since each seller might have different levels of experience or knowledge at the time when they make their first sale. The number of sales a seller has might be a better indicator of how trustworthy they are. When I buy something on Ebay I always look at how many sales the seller has as one of the indicators to judge if they are a sale to buy from or not. However we did find that there is a high significance in the positive correlation among three types of centrality(degree, betweenness and eigenvector) and the number of transactions. This also makes sense when we consider our data in the context of a network. The more sales a seller makes the more central they are in the network. 
+
+Also, we did some modeling work for this trust network as well. We first validate our hypothesis that the bitcoin market is also fitted into a scale-free(or preferential attachment) network null model as most real world networks by using the frequency distribution of occurrences of sellers. The average ratings of each seller is also fitted into the null model. Furthermore, we observe that the most frequent average ratings are 1, 2, 1.5, 3, 1.33, 1.25, 0. One possible explanation could be that the source is not credible that the buyer left with a bad rating after a single transaction and no one visited after that. For the test of the famous 80-20 rule, we find that over 37% percent of users contribute to 80% of total transactions. At last, we did a simulation of the bitcoin market based on the principles of social selections–Where people are more likely to make transactions based on the similarity of their ratings and people with higher average ratings are more likely to be selected as target. After 200 times simulation, we found that the modularity decreases over time which seems to be unrealistic. One reason is that people with higher average ratings are not the people with the higher centrality/have the most transactions. So choosing to trade with people who have a higher rating will "de-modularize" the network.
+
+# References
